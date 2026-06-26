@@ -251,9 +251,8 @@ async function onFloatBtnClick() {
   const cleanup = applyHighlightToRange(annotation.id, annotation.color, selData.range);
   cleanups.set(annotation.id, cleanup);
   currentAnnotations.push(annotation);
+  currentAnnotations.sort((a, b) => (a.textPosition?.start ?? Infinity) - (b.textPosition?.start ?? Infinity));
   localCount = currentAnnotations.length;
-
-  openNotePopover(annotation);
 }
 
 // ─── Click on existing highlight → note popover (M4) ──────────────────────
@@ -268,7 +267,7 @@ function setupClickDelegation() {
   });
 }
 
-async function fetchAnnotationAndOpenPopover(id: string, cx: number, cy: number) {
+async function fetchAnnotationAndOpenPopover(id: string, cx?: number, cy?: number) {
   const annotations: Annotation[] = await chrome.runtime.sendMessage({
     type: 'annotation/listByUrl',
     payload: { url: pageUrl },
@@ -345,6 +344,9 @@ function openLibrary() {
       onScrollTo: (id: string) => {
         const mark = document.querySelector(`mark[${HIGHLIGHT_ATTR}="${id}"]`);
         mark?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      },
+      onEditNote: (id: string) => {
+        fetchAnnotationAndOpenPopover(id);
       },
     },
   });

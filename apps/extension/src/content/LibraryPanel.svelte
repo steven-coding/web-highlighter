@@ -6,17 +6,27 @@
     onClose,
     onDelete,
     onScrollTo,
+    onEditNote,
   }: {
     url: string;
     onClose: () => void;
     onDelete: (id: string) => void;
     onScrollTo: (id: string) => void;
+    onEditNote: (id: string) => void;
   } = $props();
 
   let annotations = $state<Annotation[]>([]);
   let editingId = $state<string | null>(null);
   let editNote = $state('');
   let loading = $state(true);
+
+  const sortedAnnotations = $derived(
+    [...annotations].sort((a, b) => {
+      const aPos = a.textPosition?.start ?? Infinity;
+      const bPos = b.textPosition?.start ?? Infinity;
+      return aPos - bPos;
+    }),
+  );
 
   $effect(() => {
     chrome.runtime.sendMessage({ type: 'annotation/listByUrl', payload: { url } }).then(
@@ -60,12 +70,12 @@
     {:else if annotations.length === 0}
       <p class="empty">Keine Highlights auf dieser Seite.</p>
     {:else}
-      {#each annotations as a (a.id)}
+      {#each sortedAnnotations as a (a.id)}
         <div class="item">
           <div
             class="item-quote"
-            onclick={() => onScrollTo(a.id)}
-            onkeydown={(e) => e.key === 'Enter' && onScrollTo(a.id)}
+            onclick={() => onEditNote(a.id)}
+            onkeydown={(e) => e.key === 'Enter' && onEditNote(a.id)}
             role="button"
             tabindex="0"
           >
