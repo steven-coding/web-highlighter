@@ -13,10 +13,15 @@ import {
 import NotePopover from './NotePopover.svelte';
 import LibraryPanel from './LibraryPanel.svelte';
 
-const pageUrl = normalizeUrl(location.href);
+// Current page URL (mutable — SPAs navigate without a full reload, see setupSpaObserver)
+let pageUrl = normalizeUrl(location.href);
 
 // Stores cleanup functions (remove highlight) per annotation id
 const cleanups = new Map<string, () => void>();
+
+// Annotations belonging to the current URL — kept in memory so we can re-anchor
+// after an SPA re-render wipes our <mark> nodes, without a background round-trip
+let currentAnnotations: Annotation[] = [];
 
 // Local annotation count — updated on create/delete/reanchor so popup doesn't need a BG call
 let localCount = 0;
@@ -35,31 +40,105 @@ let floatBtn: HTMLElement | null = null;
 
 // ─── Bootstrap ─────────────────────────────────────────────────────────────
 
-// Listeners must be registered synchronously — don't wait for reanchorAll
+// Listeners must be registered synchronously — don't wait for the initial load
 setupSelectionListener();
 setupClickDelegation();
 setupMessageListener();
-reanchorAll().catch((err) => console.error('[wh] reanchor failed', err));
+setupSpaObserver();
+void initialLoad();
 
 // ─── Re-anchoring (M3) ────────────────────────────────────────────────────
 
-async function reanchorAll() {
-  let annotations: Annotation[];
+async function fetchAnnotations(): Promise<Annotation[]> {
   try {
     const res = await chrome.runtime.sendMessage({
       type: 'annotation/listByUrl',
       payload: { url: pageUrl },
     });
-    annotations = Array.isArray(res) ? res : [];
+    return Array.isArray(res) ? res : [];
   } catch (err) {
-    console.error('[wh] reanchorAll: background not reachable', err);
-    return;
+    console.error('[wh] listByUrl: background not reachable', err);
+    return [];
   }
-  for (const a of annotations) {
+}
+
+// Anchor every annotation that isn't currently rendered. Idempotent: skips ones
+// whose <mark> still exists, so it's cheap to call repeatedly on DOM changes.
+async function applyMissing() {
+  for (const a of currentAnnotations) {
+    if (document.querySelector(`mark[${HIGHLIGHT_ATTR}="${a.id}"]`)) continue;
     const cleanup = await anchorAnnotation(a);
     if (cleanup) cleanups.set(a.id, cleanup);
   }
-  localCount = cleanups.size;
+  localCount = currentAnnotations.length;
+}
+
+// Drop all existing highlights, refetch for the current URL, and re-anchor.
+async function reloadForCurrentUrl() {
+  for (const c of cleanups.values()) c();
+  cleanups.clear();
+  currentAnnotations = await fetchAnnotations();
+  await applyMissing();
+}
+
+async function initialLoad() {
+  syncing = true;
+  try {
+    await reloadForCurrentUrl();
+  } catch (err) {
+    console.error('[wh] initial load failed', err);
+  } finally {
+    syncing = false;
+  }
+}
+
+// ─── SPA re-render & navigation handling ──────────────────────────────────
+//
+// SPAs (e.g. Angular) re-render the DOM after our content script runs, which
+// removes our <mark> nodes, and they navigate via the History API without a
+// full page reload. A debounced MutationObserver re-applies missing highlights
+// and detects URL changes. `syncing` guards against reacting to our own mark
+// insertions (which would otherwise cause a feedback loop).
+
+let syncing = false;
+let syncScheduled = false;
+
+function scheduleSync() {
+  if (syncScheduled) return;
+  syncScheduled = true;
+  setTimeout(runSync, 300);
+}
+
+async function runSync() {
+  syncScheduled = false;
+  if (syncing) {
+    scheduleSync();
+    return;
+  }
+  syncing = true;
+  try {
+    const next = normalizeUrl(location.href);
+    if (next !== pageUrl) {
+      pageUrl = next;
+      await reloadForCurrentUrl();
+    } else {
+      await applyMissing();
+    }
+  } catch (err) {
+    console.error('[wh] sync failed', err);
+  } finally {
+    syncing = false;
+  }
+}
+
+function setupSpaObserver() {
+  const observer = new MutationObserver(() => {
+    if (syncing) return; // ignore mutations caused by our own highlighting
+    scheduleSync();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  // History API doesn't emit events for pushState; popstate covers back/forward.
+  window.addEventListener('popstate', scheduleSync);
 }
 
 // ─── Selection → floating button (M2) ─────────────────────────────────────
@@ -171,7 +250,8 @@ async function onFloatBtnClick() {
 
   const cleanup = applyHighlightToRange(annotation.id, annotation.color, selData.range);
   cleanups.set(annotation.id, cleanup);
-  localCount++;
+  currentAnnotations.push(annotation);
+  localCount = currentAnnotations.length;
 
   openNotePopover(annotation);
 }
@@ -259,7 +339,8 @@ function openLibrary() {
         const cleanup = cleanups.get(id);
         cleanup?.();
         cleanups.delete(id);
-        localCount = Math.max(0, localCount - 1);
+        currentAnnotations = currentAnnotations.filter((a) => a.id !== id);
+        localCount = currentAnnotations.length;
       },
       onScrollTo: (id: string) => {
         const mark = document.querySelector(`mark[${HIGHLIGHT_ATTR}="${id}"]`);
