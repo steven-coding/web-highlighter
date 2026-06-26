@@ -1,0 +1,23 @@
+{
+  "name": "web-highlighter",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:core": "npm run build --workspace @highlighter/core",
+    "dev:ext": "npm run dev --workspace @highlighter/extension",
+    "build:ext": "npm run build --workspace @highlighter/extension",
+    "dev:mobile": "npm run dev --workspace @highlighter/mobile",
+    "build:mobile": "npm run build --workspace @highlighter/mobile",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@apache-annotator/selector": "^0.2.0"
+  }
+}

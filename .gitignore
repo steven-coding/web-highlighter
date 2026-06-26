@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+
+# Capacitor / Android
+apps/mobile/android/app/build/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/android/app/release/
+
+# Keystore NIEMALS committen
+*.keystore
+*.jks
+
+# OS
+.DS_Store

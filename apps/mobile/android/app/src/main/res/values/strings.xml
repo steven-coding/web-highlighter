@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Web Highlighter</string>
+    <string name="title_activity_main">Web Highlighter</string>
+    <string name="package_name">dev.steven.highlighter</string>
+    <string name="custom_url_scheme">dev.steven.highlighter</string>
+</resources>
